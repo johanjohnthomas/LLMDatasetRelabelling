@@ -48,6 +48,10 @@ def classify_text(text):
         json_data = response.json()
         classification = json_data['choices'][0]['message']['content'].strip().lower()
 
+        # Optionally enforce strictly 'suicide ideation' or 'not suicide ideation'
+        if classification not in ["suicide ideation", "not suicide ideation"]:
+            classification = None
+
         return classification
     except requests.exceptions.RequestException as e:
         print(f"Error with the API: {e}")
@@ -61,9 +65,11 @@ def process_csv(input_csv, output_csv):
     if os.path.exists(output_csv):
         # If a checkpoint file already exists, load it
         df = pd.read_csv(output_csv)
+        print(f"Loaded existing progress from '{output_csv}'.")
     else:
         # No checkpoint file - read the original data
         df = pd.read_csv(input_csv)
+        print(f"Starting new classification from '{input_csv}'.")
 
     # --- Step 2: Ensure required columns exist ---
     if 'New_Class' not in df.columns:
@@ -72,19 +78,26 @@ def process_csv(input_csv, output_csv):
     if 'Changed' not in df.columns:
         df['Changed'] = False
 
-    # Reclassified = 1 means this row is done; 0 means not yet classified
     if 'Reclassified' not in df.columns:
         df['Reclassified'] = 0
 
-    # --- Step 3: Classify only rows that haven't been classified yet (Reclassified == 0) ---
-    reclass_count = 0  # tracks how many rows we've classified this run
+    # --- Step 3: Find how many rows still need classification ---
+    rows_to_classify = df[df['Reclassified'] == 0].shape[0]
+    print(f"Rows needing classification: {rows_to_classify}")
 
+    if rows_to_classify == 0:
+        print("All rows have already been classified. Exiting.")
+        return
+
+    reclass_count = 0  # Number of rows classified this run
+    total_classified_now = 0  # Will track how many we've done in this run, to show progress
+
+    # --- Step 4: Classify only rows that haven't been classified yet (Reclassified == 0) ---
     for index, row in df.iterrows():
-        # Skip rows that have already been classified
         if row['Reclassified'] == 1:
-            continue
+            continue  # skip rows already done
 
-        original_class = str(row['class']).lower()  # handle possible NaN, so convert to str
+        original_class = str(row['class']).lower()  # handle possible NaN
         text = row['text']
         new_class = classify_text(text)
 
@@ -93,15 +106,23 @@ def process_csv(input_csv, output_csv):
             df.at[index, 'Changed'] = (original_class != new_class)
             df.at[index, 'Reclassified'] = 1
             reclass_count += 1
+            total_classified_now += 1
 
-            # --- Step 4: Check if we should save a checkpoint ---
+            # Print progress after each classification (you could change this to every 100, for less verbosity)
+            rows_remaining = rows_to_classify - total_classified_now
+            print(f"Classified row index {index}. "
+                  f"New_Class: {new_class} | Changed: {df.at[index, 'Changed']} | "
+                  f"Remaining: {rows_remaining}")
+
+            # --- Step 5: Check if we should save a checkpoint ---
             if reclass_count % CHECKPOINT_INTERVAL == 0:
                 df.to_csv(output_csv, index=False)
-                print(f"Checkpoint saved after {reclass_count} classifications.")
+                print(f"[Checkpoint] Saved after {reclass_count} classifications in this run.")
 
-    # --- Step 5: Save final updated CSV after all (or remaining) rows ---
+    # --- Step 6: Save final updated CSV after all (or remaining) rows ---
     df.to_csv(output_csv, index=False)
-    print(f"Updated dataset saved to {output_csv}. Total newly classified rows: {reclass_count}")
+    print(f"Updated dataset saved to {output_csv}.")
+    print(f"Total newly classified rows in this run: {reclass_count}")
 
 
 if __name__ == "__main__":
