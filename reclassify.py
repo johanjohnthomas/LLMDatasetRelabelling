@@ -4,7 +4,7 @@ import requests
 
 # Filepaths for your CSV files
 input_csv = 'Suicide_Detection.csv'
-output_csv = 'Updated_Suicide_Detection.csv'
+output_csv = 'DeepSeekR1DistillQwen7b_Suicide_Detection.csv'
 
 # How often to save intermediate progress (e.g., every 1,000 rows)
 CHECKPOINT_INTERVAL = 1000
